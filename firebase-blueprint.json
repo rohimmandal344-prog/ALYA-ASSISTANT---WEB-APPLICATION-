@@ -1,0 +1,128 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user preferences and assistant settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "language": { "type": "string", "description": "Preferred language code (e.g., 'en')" },
+        "voiceName": { "type": "string", "description": "Selected TTS voice name" },
+        "wakeWordEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Device": {
+      "title": "Connected Device",
+      "description": "Represents an Android or Web client connected to Alya.",
+      "type": "object",
+      "properties": {
+        "deviceId": { "type": "string" },
+        "userId": { "type": "string" },
+        "platform": { "type": "string", "enum": ["android", "web"] },
+        "deviceName": { "type": "string" },
+        "lastSeen": { "type": "string", "format": "date-time" },
+        "batteryLevel": { "type": "number" },
+        "isOnline": { "type": "boolean" },
+        "permissions": {
+          "type": "object",
+          "description": "Current permission states on the device"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of supported capability IDs"
+        }
+      },
+      "required": ["deviceId", "userId", "platform"]
+    },
+    "Conversation": {
+      "title": "Conversation Thread",
+      "description": "A chat session between a user and Alya.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId"]
+    },
+    "Message": {
+      "title": "Conversation Message",
+      "description": "An individual message in a conversation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "intent": { "type": "string", "description": "Detected intent for user messages" },
+        "commandExecution": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["pending", "success", "failure"] },
+            "deviceId": { "type": "string" },
+            "result": { "type": "string" },
+            "error": { "type": "string" }
+          }
+        }
+      },
+      "required": ["id", "conversationId", "userId", "role", "content", "timestamp"]
+    },
+    "VoiceSessionEntity": {
+      "title": "Voice Session",
+      "description": "A low-latency past voice call or session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "durationSeconds": { "type": "number" },
+        "transcript": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "speaker": { "type": "string", "enum": ["user", "assistant"] },
+              "text": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "required": ["id", "userId", "title", "createdAt", "transcript"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/users/{userId}/devices/{deviceId}": {
+      "schema": "Device",
+      "description": "Devices linked to a user"
+    },
+    "/users/{userId}/conversations/{conversationId}": {
+      "schema": "Conversation",
+      "description": "User conversation threads"
+    },
+    "/users/{userId}/conversations/{conversationId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a conversation"
+    },
+    "/users/{userId}/voice_sessions/{sessionId}": {
+      "schema": "VoiceSessionEntity",
+      "description": "Past low-latency voice call records"
+    }
+  }
+}
