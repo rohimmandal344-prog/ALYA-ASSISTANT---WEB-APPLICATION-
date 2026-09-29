@@ -39,22 +39,25 @@ class PermissionManagerImpl {
           if (status.state === 'denied') {
             return { granted: false, error: 'Microphone access is explicitly blocked in browser permissions.' };
           }
+          if (status.state === 'granted' || status.state === 'prompt') {
+            return { granted: true };
+          }
         } catch {
-          // Fall through to stream request check
+          // Fall through to device check
         }
       }
 
-      // Request stream probe to verify actual hardware access
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      // If permissions API is unavailable, verify audio input device presence
+      if (navigator.mediaDevices.enumerateDevices) {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const hasMic = devices.some(d => d.kind === 'audioinput');
+          if (!hasMic && devices.length > 0) {
+            return { granted: false, error: 'No microphone input device was detected on your hardware.' };
+          }
+        } catch {}
+      }
 
-      // Release test tracks immediately
-      stream.getTracks().forEach((track) => track.stop());
       return { granted: true };
     } catch (err: any) {
       let errorMsg = 'Microphone permission request failed.';

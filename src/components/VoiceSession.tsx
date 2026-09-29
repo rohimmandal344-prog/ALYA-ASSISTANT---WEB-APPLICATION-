@@ -65,6 +65,8 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
   const activeSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const activeSourceNodesRef = useRef<AudioBufferSourceNode[]>([]);
+  const isStartingSessionRef = useRef(false);
   const turnGenerationIdRef = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -137,6 +139,19 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
     };
   }, [publishDiagnostics]);
 
+  // Synchronize hardware media track state with mute toggle and recover suspended AudioContext
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = !isMuted;
+      });
+    }
+    if (!isMuted && audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    publishDiagnostics();
+  }, [isMuted, publishDiagnostics]);
+
   // Natural female voice synthesis fallback for text replies
   const speakTextWithHumanVoice = useCallback((text: string) => {
     if (!speakerOn) return;
@@ -187,13 +202,15 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
     isPlayingRef.current = false;
     nextStartTimeRef.current = 0;
 
-    if (activeSourceNodeRef.current) {
+    // Stop and disconnect ALL active and scheduled source nodes to prevent any late audio overlapping
+    activeSourceNodesRef.current.forEach(node => {
       try {
-        activeSourceNodeRef.current.stop();
-        activeSourceNodeRef.current.disconnect();
+        node.stop();
+        node.disconnect();
       } catch {}
-      activeSourceNodeRef.current = null;
-    }
+    });
+    activeSourceNodesRef.current = [];
+    activeSourceNodeRef.current = null;
 
     speechEngine.stop();
     if ('speechSynthesis' in window) {
@@ -318,16 +335,30 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
       streamRef.current = stream;
 
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      const audioCtx = new AudioCtxClass({ sampleRate: 16000 });
+      
+      // Hardware-safe AudioContext initialization: try 16kHz for low data, fallback to native sample rate
+      let audioCtx: AudioContext;
+      try {
+        audioCtx = new AudioCtxClass({ sampleRate: 16000 });
+      } catch {
+        audioCtx = new AudioCtxClass();
+      }
+
       if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
+        await audioCtx.resume().catch(() => {});
       }
       audioCtxRef.current = audioCtx;
 
-      // Dedicated 24kHz Output Context for LiveKit Voice Agent Audio Playback (Ultra-Realistic Fidelity)
-      const outputAudioCtx = new AudioCtxClass({ sampleRate: 24000 });
+      // Dedicated Output Context for Live Voice Playback (24kHz preferred, fallback to native)
+      let outputAudioCtx: AudioContext;
+      try {
+        outputAudioCtx = new AudioCtxClass({ sampleRate: 24000 });
+      } catch {
+        outputAudioCtx = new AudioCtxClass();
+      }
+
       if (outputAudioCtx.state === 'suspended') {
-        await outputAudioCtx.resume();
+        await outputAudioCtx.resume().catch(() => {});
       }
       outputAudioCtxRef.current = outputAudioCtx;
 
@@ -455,7 +486,7 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
 
       audioQueueRef.current.push(floatData);
       setActiveSpeaker('assistant');
-      if (!isPlayingRef.current) processQueue();
+      scheduleNextChunks();
     } catch (err) {
       console.warn('[VoiceSession] Audio decode error:', err);
     }
@@ -463,60 +494,57 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
 
   const nextStartTimeRef = useRef<number>(0);
 
-  const processQueue = async () => {
+  const scheduleNextChunks = () => {
     const outCtx = outputAudioCtxRef.current || audioCtxRef.current;
-    if (audioQueueRef.current.length === 0 || !outCtx || !speakerOn) {
-      isPlayingRef.current = false;
-      activeSourceNodeRef.current = null;
-      nextStartTimeRef.current = 0;
-      setActiveSpeaker('none');
+    if (!outCtx || !speakerOn || audioQueueRef.current.length === 0) {
       return;
     }
 
     if (outCtx.state === 'suspended') {
-      try { await outCtx.resume(); } catch {}
+      outCtx.resume().catch(() => {});
     }
 
     isPlayingRef.current = true;
     setActiveSpeaker('assistant');
-    const chunk = audioQueueRef.current.shift()!;
-    
-    // Direct 24000Hz pristine reproduction from LiveKit Voice Agent
-    const sampleRate = 24000;
-    const audioBuffer = outCtx.createBuffer(1, chunk.length, sampleRate);
-    audioBuffer.getChannelData(0).set(chunk);
 
-    const source = outCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    activeSourceNodeRef.current = source;
+    while (audioQueueRef.current.length > 0) {
+      const chunk = audioQueueRef.current.shift()!;
+      const sampleRate = 24000;
+      const audioBuffer = outCtx.createBuffer(1, chunk.length, sampleRate);
+      audioBuffer.getChannelData(0).set(chunk);
 
-    if (speakerAnalyserRef.current) {
-      source.connect(speakerAnalyserRef.current);
-      speakerAnalyserRef.current.connect(outCtx.destination);
-    } else {
-      source.connect(outCtx.destination);
-    }
+      const source = outCtx.createBufferSource();
+      source.buffer = audioBuffer;
 
-    // Precise scheduling to avoid gaps/pops
-    const currentTime = outCtx.currentTime;
-    if (nextStartTimeRef.current < currentTime) {
-      nextStartTimeRef.current = currentTime + 0.01; // Small lookahead
-    }
-
-    source.start(nextStartTimeRef.current);
-    nextStartTimeRef.current += audioBuffer.duration;
-
-    source.onended = () => {
-      if (activeSourceNodeRef.current === source) {
-        activeSourceNodeRef.current = null;
-      }
-      if (audioQueueRef.current.length > 0) {
-        processQueue();
+      if (speakerAnalyserRef.current) {
+        source.connect(speakerAnalyserRef.current);
+        speakerAnalyserRef.current.connect(outCtx.destination);
       } else {
-        isPlayingRef.current = false;
-        setActiveSpeaker('none');
+        source.connect(outCtx.destination);
       }
-    };
+
+      const currentTime = outCtx.currentTime;
+      // Schedule slightly in the future to ensure glitch-free back-to-back audio delivery
+      if (nextStartTimeRef.current < currentTime) {
+        nextStartTimeRef.current = currentTime + 0.03;
+      }
+
+      source.start(nextStartTimeRef.current);
+      
+      activeSourceNodesRef.current.push(source);
+      activeSourceNodeRef.current = source;
+
+      nextStartTimeRef.current += audioBuffer.duration;
+
+      source.onended = () => {
+        activeSourceNodesRef.current = activeSourceNodesRef.current.filter(n => n !== source);
+        if (activeSourceNodesRef.current.length === 0 && audioQueueRef.current.length === 0) {
+          isPlayingRef.current = false;
+          setActiveSpeaker('none');
+          nextStartTimeRef.current = 0;
+        }
+      };
+    }
   };
 
   const handleSendLiveText = async () => {
@@ -538,6 +566,11 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
   };
 
   const startLiveSession = async () => {
+    if (isStartingSessionRef.current || wsRef.current) {
+      console.warn('[VoiceSession] startLiveSession ignored: setup in progress or WebSocket already exists.');
+      return;
+    }
+    isStartingSessionRef.current = true;
     try {
       // Centralized Permission & Readiness Check via PermissionManager
       const prereqs = await PermissionManager.verifyVoiceSessionPrerequisites();
@@ -547,13 +580,6 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
       } else {
         setMicDenied(false);
         setMicPermissionError(null);
-        try {
-          await voiceEngine.initializeMicrophone();
-        } catch (micErr: any) {
-          console.info('[VoiceSession] Microphone initialization notice:', micErr?.message || micErr);
-          setMicDenied(true);
-          setMicPermissionError(micErr?.message || 'Microphone access is explicitly blocked in browser permissions.');
-        }
       }
 
       if (!prereqs.network.online) {
@@ -685,6 +711,8 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
       console.error('[VoiceSession] Live Setup Error:', error);
       statsRef.current.lastError = error?.message || 'Failed to start Live API session';
       publishDiagnostics();
+    } finally {
+      isStartingSessionRef.current = false;
     }
   };
 
@@ -981,12 +1009,14 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
                   </div>
                   
                   <button 
-                    onClick={() => {
-                      if (micDenied) {
-                        window.location.reload();
-                      } else {
-                        setMicDenied(false);
-                        setupAudioCapture();
+                    onClick={async () => {
+                      setMicDenied(false);
+                      setMicPermissionError(null);
+                      try {
+                        await setupAudioCapture();
+                      } catch (err: any) {
+                        setMicDenied(true);
+                        setMicPermissionError(err?.message || 'Microphone access is blocked by browser permissions.');
                       }
                     }}
                     className={`w-full py-2 font-bold rounded-xl shrink-0 transition-all text-center ${
@@ -995,7 +1025,7 @@ export function VoiceSession({ isOpen, onClose, voiceName = 'Aoede' }: VoiceSess
                         : 'bg-amber-500/20 hover:bg-amber-500/40 text-amber-100 border border-amber-500/30'
                     }`}
                   >
-                    {micDenied ? 'Refresh to Apply Settings' : 'Try Again'}
+                    Retry Microphone Access
                   </button>
                 </div>
               )}

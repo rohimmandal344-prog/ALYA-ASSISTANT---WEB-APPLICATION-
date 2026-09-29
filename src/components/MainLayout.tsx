@@ -45,12 +45,14 @@ import { AutomationsView } from './AutomationsView';
 import { TestingView } from './TestingView';
 import { AutoReplyView } from './AutoReplyView';
 import { VoiceTranscriptView } from './VoiceTranscriptView';
+import { RooClineIntegrationModal } from './RooClineIntegrationModal';
 
 export function MainLayout() {
   const { user, profile, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isVoicePopupOpen, setIsVoicePopupOpen] = useState(false);
+  const [isRooClineOpen, setIsRooClineOpen] = useState(false);
   const [showMicModal, setShowMicModal] = useState(false);
   const [selectedVoice] = useState('Aoede');
   const [micStatus, setMicStatus] = useState<{
@@ -320,6 +322,23 @@ export function MainLayout() {
             </button>
           ))}
         </nav>
+
+        {/* Roo Code & Cline 24/7 Agent Server */}
+        <div className="px-4 pb-2">
+          <button
+            onClick={() => setIsRooClineOpen(true)}
+            className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-300 bg-indigo-50/70 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/50 dark:border-indigo-800/50 transition-all cursor-pointer shadow-xs"
+          >
+            <div className="flex items-center gap-3">
+              <Terminal className="w-5 h-5 text-indigo-500" />
+              <span className="font-bold">Roo Code & Cline</span>
+            </div>
+            <span className="flex items-center gap-1 text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              24/7
+            </span>
+          </button>
+        </div>
 
         {/* Live Diagnostics Sidebar Button */}
         <div className="px-4 pb-2">
@@ -1123,6 +1142,12 @@ export function MainLayout() {
         )}
       </AnimatePresence>
 
+      {/* Roo Code & Cline Integration Modal */}
+      <RooClineIntegrationModal 
+        isOpen={isRooClineOpen} 
+        onClose={() => setIsRooClineOpen(false)} 
+      />
+
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -1148,21 +1173,45 @@ export function MainLayout() {
                 </div>
                 <button onClick={() => setIsSidebarOpen(false)} className="p-2"><X className="w-6 h-6"/></button>
               </div>
-              <nav className="flex-1 p-4 space-y-2">
+              <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
                 {navItems.map((item) => (
                   <button
                     key={item.id}
                     onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
-                    className={`flex items-center gap-3 w-full px-4 py-4 rounded-2xl text-base font-medium transition-all ${
+                    className={`flex items-center gap-3 w-full px-4 py-3.5 rounded-2xl text-base font-medium transition-all ${
                       activeTab === item.id 
-                        ? 'bg-slate-900 text-white shadow-lg' 
-                        : 'text-slate-500 active:bg-slate-100'
+                        ? 'bg-slate-900 text-white shadow-lg dark:bg-white dark:text-slate-900' 
+                        : 'text-slate-500 active:bg-slate-100 dark:active:bg-slate-800'
                     }`}
                   >
-                    <item.icon className="w-6 h-6" />
+                    <item.icon className="w-5 h-5" />
                     {item.label}
                   </button>
                 ))}
+
+                <div className="pt-3 space-y-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => { setIsRooClineOpen(true); setIsSidebarOpen(false); }}
+                    className="flex items-center justify-between w-full px-4 py-3 rounded-2xl text-sm font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-800/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Terminal className="w-5 h-5 text-indigo-500" />
+                      <span>Roo Code & Cline</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold">24/7 Server</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setIsDiagnosticsOpen(true); setIsSidebarOpen(false); }}
+                    className="flex items-center justify-between w-full px-4 py-3 rounded-2xl text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/60"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Activity className="w-5 h-5 text-emerald-500" />
+                      <span>Live Diagnostics</span>
+                    </div>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  </button>
+                </div>
               </nav>
             </motion.aside>
           </>

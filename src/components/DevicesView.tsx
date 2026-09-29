@@ -934,32 +934,43 @@ export function DevicesView() {
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {[
-                          { key: 'accessibilityActive', label: 'Accessibility', icon: Activity },
-                          { key: 'notificationListenerActive', label: 'Notifications', icon: Bell },
-                          { key: 'displayOverOtherAppsActive', label: 'Overlay (In-Display)', icon: Layers },
-                          { key: 'wakeWordActive', label: 'Wake Engine', icon: Mic }
+                          { key: 'accessibilityActive', label: 'Accessibility', icon: Activity, setting: 'accessibility' },
+                          { key: 'notificationListenerActive', label: 'Notifications', icon: Bell, setting: 'notification' },
+                          { key: 'displayOverOtherAppsActive', label: 'Overlay (In-Display)', icon: Layers, setting: 'overlay' },
+                          { key: 'wakeWordActive', label: 'Wake Engine', icon: Mic, setting: 'apps' }
                         ].map((perm) => {
                           const isActive = (telemetry as any)[perm.key];
                           return (
-                            <div 
+                            <button 
                               key={perm.key}
-                              className={`p-2.5 rounded-2xl border flex flex-col gap-1.5 transition-colors ${
+                              type="button"
+                              onClick={async () => {
+                                if (!isActive) {
+                                  try {
+                                    await sendCommand(device.deviceId, 'DEVICE_SETTING_CONTROL', { setting: perm.setting });
+                                  } catch (err: any) {
+                                    console.warn('Failed to prompt permission on companion:', err);
+                                  }
+                                }
+                              }}
+                              title={isActive ? `${perm.label} authorized` : `Tap to open ${perm.label} setup on companion device`}
+                              className={`p-2.5 rounded-2xl border flex flex-col gap-1.5 transition-all text-left ${
                                 isActive 
-                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/50' 
-                                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-60'
+                                  ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/50 cursor-default' 
+                                  : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-900 dark:text-amber-200 cursor-pointer shadow-xs active:scale-98'
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <perm.icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-500' : 'text-slate-400'}`} />
-                                <div className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                                <perm.icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-500' : 'text-amber-500'}`} />
+                                <div className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
                               </div>
-                              <span className={`text-[11px] font-bold ${isActive ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'}`}>
+                              <span className={`text-[11px] font-bold ${isActive ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
                                 {perm.label}
                               </span>
-                              <span className="text-[9px] font-medium opacity-70">
-                                {isActive ? 'Authorized' : 'Action Required'}
+                              <span className="text-[9px] font-medium opacity-80">
+                                {isActive ? 'Authorized' : 'Tap to Grant on Device ↗'}
                               </span>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>

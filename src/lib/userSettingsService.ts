@@ -76,6 +76,10 @@ export interface UserPreferences {
   
   // 9. Visual & Theme
   theme: ThemeType;
+
+  // 10. Low Internet / Data Saver & Developer Integrations
+  dataSaver: boolean;
+  rooCodeClineEnabled: boolean;
 }
 
 export interface SettingChangeLogEntry {
@@ -128,7 +132,9 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   deviceControlConfirmation: 'confirm_sensitive',
   offlineMode: true,
   
-  theme: 'dark'
+  theme: 'dark',
+  dataSaver: false,
+  rooCodeClineEnabled: true
 };
 
 const STORAGE_PREFS_KEY = 'alya_user_preferences_v2';

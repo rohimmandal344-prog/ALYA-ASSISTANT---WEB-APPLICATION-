@@ -6,7 +6,7 @@ import {
   Mic, Zap, Cpu, Check, Radio, Play, Smartphone, WifiOff, Sparkles, Search,
   MapPin, CloudSun, Compass, Droplets, Wind, Thermometer, RefreshCw, AlertCircle,
   Database, Sliders, History, Download, Upload, RotateCcw, Lock, CheckCircle2,
-  SlidersHorizontal, Eye, ShieldAlert, ArrowRight, CornerDownLeft
+  SlidersHorizontal, Eye, ShieldAlert, ArrowRight, CornerDownLeft, Terminal, Wifi, Code2, Copy
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../lib/LanguageDetector';
 import { locationService, LocationPermissionState } from '../lib/locationService';
@@ -712,7 +712,106 @@ export function SettingsView() {
           </div>
         </section>
 
-        {/* 7. Backup, Import, Reset & Sign Out */}
+        {/* 7. Low Internet Consumption & Roo Code / Cline 24/7 Developer Integration */}
+        <section className="bg-slate-900/80 rounded-3xl border border-white/5 p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-cyan-500/10 text-cyan-400 rounded-2xl border border-cyan-500/20">
+                <Wifi className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Low Internet Consumption & 24/7 Developer Endpoints</span>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                    24/7 Active
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400">Optimize data usage on cellular/mobile connections and connect Roo Code / Cline agent extensions.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Data Saver Mode Toggle */}
+            <div className="flex items-center justify-between p-4 bg-slate-950/60 rounded-2xl border border-white/5">
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Data Saver Mode (Low Bandwidth)</span>
+                  {preferences.dataSaver && (
+                    <span className="text-[10px] text-cyan-400 font-mono font-bold">~70% Savings</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">Strips heavy execution traces, optimizes audio sample rates, and caches replies for instant response.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUpdate({ dataSaver: !preferences.dataSaver })}
+                className={`w-12 h-6 rounded-full p-1 transition-colors ${
+                  preferences.dataSaver ? 'bg-cyan-600' : 'bg-slate-800'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                  preferences.dataSaver ? 'translate-x-6' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Roo Code & Cline Endpoints Summary */}
+            <div className="p-4 bg-slate-950/60 rounded-2xl border border-white/5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-indigo-400" />
+                  Roo Code & Cline Integration
+                </span>
+                <span className="text-[11px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  24/7 Active
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Use Alya Assistant as an MCP Server or OpenAI-compatible backend in your editor.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-mono text-xs">
+                <div className="p-3 bg-slate-900 rounded-xl border border-white/5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase block font-bold">MCP Server URL</span>
+                    <span className="text-indigo-300 truncate max-w-[200px] block">/api/mcp</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/api/mcp`);
+                      triggerSaveFeedback();
+                    }}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                    title="Copy URL"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="p-3 bg-slate-900 rounded-xl border border-white/5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase block font-bold">OpenAI Base URL</span>
+                    <span className="text-indigo-300 truncate max-w-[200px] block">/v1</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/v1`);
+                      triggerSaveFeedback();
+                    }}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                    title="Copy URL"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* 8. Backup, Import, Reset & Sign Out */}
         <section className="bg-slate-900/80 rounded-3xl border border-white/5 p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">

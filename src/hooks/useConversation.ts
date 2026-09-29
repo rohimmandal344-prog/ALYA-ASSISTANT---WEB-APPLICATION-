@@ -13,6 +13,7 @@ import {
 } from '../services/conversationService';
 import { locationService } from '../lib/locationService';
 import { userSettingsService } from '../lib/userSettingsService';
+import { v4 as uuidv4 } from 'uuid';
 
 const ACTIVE_CONV_STORAGE_KEY = 'alya_active_conversation_id';
 
@@ -24,11 +25,13 @@ export function useConversation() {
     return localStorage.getItem(ACTIVE_CONV_STORAGE_KEY) || 'main';
   });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sendingMessages, setSendingMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inFlightSendsRef = useRef<Set<string>>(new Set());
 
   // Sync activeConversationId to localStorage
   useEffect(() => {
@@ -74,6 +77,8 @@ export function useConversation() {
       activeConversationId,
       (msgs) => {
         setMessages(msgs);
+        // Clear sendingMessages that are successfully saved in Firestore
+        setSendingMessages(prev => prev.filter(sm => !msgs.some(m => m.id === sm.id)));
       },
       (err) => setError('Failed to stream messages.')
     );
@@ -90,6 +95,7 @@ export function useConversation() {
       const newId = await conversationService.createConversation(user.uid, title);
       setActiveConversationId(newId);
       setError(null);
+      setSendingMessages([]);
       return newId;
     } catch (err: any) {
       console.error('Failed to create new conversation:', err);
@@ -103,6 +109,7 @@ export function useConversation() {
   const selectConversation = useCallback((id: string) => {
     setActiveConversationId(id);
     setError(null);
+    setSendingMessages([]);
   }, []);
 
   /**
@@ -146,6 +153,7 @@ export function useConversation() {
     if (!user) return;
     try {
       setError(null);
+      setSendingMessages([]);
       await Promise.all(conversations.map(c => conversationService.deleteConversation(user.uid, c.id)));
       await createNewConversation('New Conversation');
     } catch (err: any) {
@@ -158,33 +166,49 @@ export function useConversation() {
    * Send a message with ultra-low latency optimistic UI update,
    * automated Firestore persistence, and Alya Brain cognitive reasoning.
    */
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, retryId?: string) => {
     const text = content.trim();
     if (!text || !user || !activeConversationId) return;
+
+    // Use specific ID to match optimistic message and Firestore doc
+    const msgId = retryId || uuidv4();
+
+    // Prevent duplicate in-flight sends for the exact same message/content to eliminate redundancy
+    if (inFlightSendsRef.current.has(msgId)) {
+      console.log('[useConversation] Duplicate send ignored for ID:', msgId);
+      return;
+    }
+    inFlightSendsRef.current.add(msgId);
 
     setError(null);
     setIsTyping(true);
     const startTime = performance.now();
 
-    // 1. Optimistic Local Append for 0ms UI response
+    // 1. Optimistic Local Append with explicit status and stable ID
     const optimisticMessage: ChatMessage = {
-      id: `opt-${Date.now()}`,
+      id: msgId,
       role: 'user',
       content: text,
       timestamp: { toDate: () => new Date() },
       userId: user.uid,
-      conversationId: activeConversationId
+      conversationId: activeConversationId,
+      status: 'sending'
     };
-    setMessages(prev => [...prev, optimisticMessage]);
+
+    setSendingMessages(prev => {
+      // If it is a retry, replace the existing failed message; otherwise, append
+      const filtered = prev.filter(m => m.id !== msgId);
+      return [...filtered, optimisticMessage];
+    });
 
     try {
-      // 2. Persist user message to Firestore
+      // 2. Persist user message to Firestore with stable ID matching
       await conversationService.addMessage(user.uid, activeConversationId, {
         role: 'user',
         content: text,
         userId: user.uid,
         conversationId: activeConversationId
-      });
+      }, msgId);
 
       // 3. Auto-generate title if currently "New Conversation"
       const currentConv = conversations.find(c => c.id === activeConversationId);
@@ -223,19 +247,26 @@ export function useConversation() {
       const currentPrefs = userSettingsService.getPreferences();
       const preferredLang = currentPrefs.language || 'auto';
       const recentContext = messages.slice(-6).map(m => ({ role: m.role, content: m.content }));
+      
       const response = await fetch('/api/alya/brain', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(currentPrefs.dataSaver ? { 'x-data-saver': 'true' } : {})
+        },
         signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           text,
+          userId: user.uid,
           source: 'web_chat',
           language: preferredLang,
+          dataSaver: currentPrefs.dataSaver,
           context: {
             recentMessages: recentContext,
             isOnline: true,
             location: locationContext,
-            manualCity: currentPrefs.manualCity || manualCity
+            manualCity: currentPrefs.manualCity || manualCity,
+            dataSaver: currentPrefs.dataSaver
           }
         })
       });
@@ -269,6 +300,7 @@ export function useConversation() {
       }
 
       // 7. Persist assistant reply to Firestore with cognitive verification metadata
+      const assistantMsgId = uuidv4();
       await conversationService.addMessage(user.uid, activeConversationId, {
         role: 'assistant',
         content: reply,
@@ -278,14 +310,24 @@ export function useConversation() {
         weatherData: data.weatherData,
         userId: user.uid,
         conversationId: activeConversationId
-      });
+      }, assistantMsgId);
+
+      // Clean up successfully completed send
+      setSendingMessages(prev => prev.filter(m => m.id !== msgId));
 
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       console.error('Chat error:', err);
+      
+      // Update optimistic message state to failed for immediate visual retry action
+      setSendingMessages(prev => 
+        prev.map(m => m.id === msgId ? { ...m, status: 'failed' as const } : m)
+      );
+
       const isNetwork = err?.message?.includes('fetch') || err?.name === 'TypeError';
       setError(isNetwork ? 'Network connection momentary blip. Tap to retry.' : (err.message || 'Failed to complete thought.'));
     } finally {
+      inFlightSendsRef.current.delete(msgId);
       setIsTyping(false);
     }
   }, [user, activeConversationId, messages, conversations]);
@@ -296,14 +338,22 @@ export function useConversation() {
   const retryLastMessage = useCallback(() => {
     const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
     if (lastUserMsg) {
-      sendMessage(lastUserMsg.content);
+      sendMessage(lastUserMsg.content, lastUserMsg.id);
     }
   }, [messages, sendMessage]);
+
+  // Derived stable messages feed merging real and optimistic ones
+  const mergedMessages = [...messages];
+  sendingMessages.forEach(sm => {
+    if (!mergedMessages.some(m => m.id === sm.id)) {
+      mergedMessages.push(sm);
+    }
+  });
 
   return {
     conversations,
     activeConversationId,
-    messages,
+    messages: mergedMessages,
     isTyping,
     error,
     lastLatencyMs,

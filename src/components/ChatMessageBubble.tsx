@@ -16,7 +16,8 @@ import {
   Droplets,
   Wind,
   Thermometer,
-  MapPin
+  MapPin,
+  RefreshCw
 } from 'lucide-react';
 import { ChatMessage } from '../services/conversationService';
 import { playAlyaVoice, stopAlyaVoice } from '../lib/femaleVoiceSynthesizer';
@@ -186,7 +187,11 @@ export function ChatMessageBubble({ message, onRetry, onExecuteCommand }: ChatMe
         <div className={`
           relative rounded-3xl p-4 md:p-5 shadow-xs transition-all
           ${isUser 
-            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-tr-xs shadow-md' 
+            ? message.status === 'failed'
+              ? 'bg-red-500 text-white rounded-tr-xs shadow-md'
+              : message.status === 'sending'
+                ? 'bg-slate-700 dark:bg-slate-300 text-white dark:text-slate-900 rounded-tr-xs shadow-md animate-pulse opacity-80'
+                : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-tr-xs shadow-md' 
             : 'bg-white dark:bg-slate-900/95 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-800/80 rounded-tl-xs shadow-sm backdrop-blur-sm'}
         `}>
           {/* Main content body */}
@@ -299,6 +304,18 @@ export function ChatMessageBubble({ message, onRetry, onExecuteCommand }: ChatMe
 
             {/* Assistant / Sender Tag */}
             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
+              {isUser && message.status === 'sending' && (
+                <span className="flex items-center gap-1 text-slate-400 font-bold">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Sending...
+                </span>
+              )}
+              {isUser && message.status === 'failed' && (
+                <span className="flex items-center gap-1 text-red-400 font-bold">
+                  <AlertCircle className="w-3 h-3" />
+                  Failed
+                </span>
+              )}
               {!isUser && (
                 <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold">
                   Alisa (Alya)

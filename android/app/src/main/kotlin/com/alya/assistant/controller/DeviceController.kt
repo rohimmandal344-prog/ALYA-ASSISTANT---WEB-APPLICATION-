@@ -247,20 +247,29 @@ class DeviceController(private val context: Context) {
 
     private fun openSpecificSettings(setting: String): String {
         return try {
-            val action = when (setting.lowercase()) {
-                "wifi", "wi-fi" -> Settings.ACTION_WIFI_SETTINGS
-                "bluetooth" -> Settings.ACTION_BLUETOOTH_SETTINGS
-                "display", "brightness" -> Settings.ACTION_DISPLAY_SETTINGS
-                "sound", "volume" -> Settings.ACTION_SOUND_SETTINGS
-                "apps", "application" -> Settings.ACTION_APPLICATION_SETTINGS
-                "accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
-                else -> Settings.ACTION_SETTINGS
-            }
-            val intent = Intent(action).apply {
+            val s = setting.lowercase()
+            val intent = when {
+                s in listOf("wifi", "wi-fi") -> Intent(Settings.ACTION_WIFI_SETTINGS)
+                s in listOf("bluetooth", "bt") -> Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                s in listOf("display", "brightness") -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
+                s in listOf("sound", "volume") -> Intent(Settings.ACTION_SOUND_SETTINGS)
+                s in listOf("apps", "application") -> Intent(Settings.ACTION_APPLICATION_SETTINGS)
+                s in listOf("accessibility", "accessibilityactive") -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                s in listOf("notification", "notifications", "notificationlisteneractive") -> Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                s in listOf("overlay", "displayoverotherappsactive", "system_alert_window") -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                }
+                s in listOf("battery", "batteryoptimization", "battery_optimization") -> Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                s in listOf("location", "gps") -> Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                s in listOf("permissions", "app_details") -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                }
+                else -> Intent(Settings.ACTION_SETTINGS)
+            }.apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
-            "SUCCESS: Opened Android Settings"
+            "SUCCESS: Opened Android Settings for $setting"
         } catch (e: Exception) {
             "FAILURE: ${e.message}"
         }

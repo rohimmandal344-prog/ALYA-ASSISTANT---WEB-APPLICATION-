@@ -39,8 +39,8 @@ export const conversationService = {
   subscribeToMessages: (userId: string, conversationId: string, callback: (msgs: ChatMessage[]) => void, onError?: (err: Error) => void) =>
     subscribeChatMessageHistory(userId, conversationId, callback, onError),
     
-  addMessage: (userId: string, conversationId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) =>
-    addChatMessage(userId, conversationId, message),
+  addMessage: (userId: string, conversationId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>, customMessageId?: string) =>
+    addChatMessage(userId, conversationId, message, customMessageId),
     
   getMessageHistory: (userId: string, conversationId: string, limitCount?: number) =>
     getChatMessageHistory(userId, conversationId, limitCount),

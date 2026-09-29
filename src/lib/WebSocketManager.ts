@@ -71,7 +71,7 @@ export interface CompanionRTTProbeResult {
 export interface RTTDiagnosticLogEntry {
   id: string;
   timestamp: number;
-  type: 'companion_rtt' | 'server_node_benchmark' | 'heartbeat';
+  type: 'companion_rtt' | 'server_node_benchmark' | 'heartbeat' | 'websocket_fail' | 'websocket_success';
   target: string;
   rttMs: number;
   breakdown?: {
@@ -456,6 +456,32 @@ export class WebSocketDiagnosticsModule {
     this.notifyListeners({ type: 'NEW_LOG_ENTRY', entry });
   }
 
+  public logWebSocketFail(reason: string, attempt: number) {
+    this.logEntry({
+      id: `ws_fail_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'websocket_fail',
+      target: this.wsManager.getOptionUrl(),
+      rttMs: 0,
+      status: 'failed',
+      notes: `Failed connection attempt ${attempt}: ${reason}`
+    });
+  }
+
+  public logWebSocketSuccess(attempt: number) {
+    this.logEntry({
+      id: `ws_success_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      timestamp: Date.now(),
+      type: 'websocket_success',
+      target: this.wsManager.getOptionUrl(),
+      rttMs: 0,
+      status: 'connected',
+      notes: attempt > 0 
+        ? `Reconnected successfully after ${attempt} attempt(s).` 
+        : `Connected successfully on initial attempt.`
+    });
+  }
+
   public getLogs(limit: number = 50): RTTDiagnosticLogEntry[] {
     return this.logHistory.slice(0, limit);
   }
@@ -699,10 +725,12 @@ export class WebSocketManager {
       socket.onopen = () => {
         if (this.ws !== socket) return;
         this.setStatus('OPEN');
+        const attempts = this.reconnectAttempts;
         this.reconnectAttempts = 0;
         this.startHeartbeat();
         this.flushQueue();
         if (this.options.onOpen) this.options.onOpen();
+        this.diagnostics.logWebSocketSuccess(attempts);
       };
 
       socket.onmessage = (event) => {
@@ -778,6 +806,9 @@ export class WebSocketManager {
           return;
         }
 
+        const attempt = this.reconnectAttempts + 1;
+        this.diagnostics.logWebSocketFail(`Closed with code ${event.code} (${event.reason || 'No reason specified'})`, attempt);
+
         // Graceful reconnect if online
         if (this.isOnline && this.options.autoReconnect && this.reconnectAttempts < (this.options.maxReconnectAttempts || 15)) {
           this.setStatus('RECONNECTING');
@@ -796,8 +827,15 @@ export class WebSocketManager {
           this.options.onError(err);
         }
       };
-    } catch (err) {
+    } catch (err: any) {
+      console.warn('[WebSocket] Connection creation failed, attempting exponential backoff reconnect:', err);
+      const attempt = this.reconnectAttempts + 1;
+      this.diagnostics.logWebSocketFail(`Creation threw: ${err?.message || String(err)}`, attempt);
       this.setStatus('CLOSED');
+      if (this.isOnline && this.options.autoReconnect && this.reconnectAttempts < (this.options.maxReconnectAttempts || 15)) {
+        this.setStatus('RECONNECTING');
+        this.reconnect();
+      }
     }
   }
 
@@ -915,6 +953,10 @@ export class WebSocketManager {
     return this.status;
   }
 
+  public getOptionUrl(): string {
+    return this.options.url;
+  }
+
   private eventListeners: Map<AlyaEventType, Set<(event: AlyaEvent) => void>> = new Map();
 
   public on(type: AlyaEventType, callback: (event: AlyaEvent) => void) {
@@ -989,9 +1031,13 @@ export class WebSocketManager {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     
     this.reconnectAttempts++;
+    // Exponential backoff with standard multiplier of 1.5, capped at 30 seconds
     const baseDelay = Math.min(30000, (this.options.reconnectInterval || 3000) * Math.pow(1.5, this.reconnectAttempts - 1));
+    // Apply randomized jitter to prevent thundering herd problem on proxies/gateways
     const jitter = Math.floor(Math.random() * 600);
     const delay = baseDelay + jitter;
+    
+    console.warn(`[WebSocket] Offline, connection closed, or proxy failed. Retrying in ${delay.toFixed(0)}ms (Attempt ${this.reconnectAttempts}/${this.options.maxReconnectAttempts || 15}) using exponential backoff with jitter.`);
     
     this.reconnectTimer = setTimeout(() => {
       this.connect();

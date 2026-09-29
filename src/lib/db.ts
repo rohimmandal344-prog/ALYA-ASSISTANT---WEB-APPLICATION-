@@ -38,6 +38,7 @@ export interface ChatMessage {
   timestamp: any;
   userId: string;
   conversationId: string;
+  status?: 'pending' | 'sending' | 'sent' | 'failed' | 'retrying';
   agentName?: string;
   intent?: string;
   verified?: boolean;
@@ -123,6 +124,39 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+/**
+ * Recursively cleans objects and arrays to remove undefined properties before writing to Firestore,
+ * preserving special Firestore object instances like FieldValue and Timestamp.
+ */
+export function sanitizeFirestoreData<T = any>(data: T): T {
+  if (data === undefined) {
+    return null as any;
+  }
+  if (data === null) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeFirestoreData(item)) as any;
+  }
+  if (data && typeof data === 'object') {
+    const proto = Object.getPrototypeOf(data);
+    const isPlain = proto === null || proto === Object.prototype;
+    if (!isPlain) {
+      return data;
+    }
+    
+    const cleaned: any = {};
+    for (const key of Object.keys(data)) {
+      const val = (data as any)[key];
+      if (val !== undefined) {
+        cleaned[key] = sanitizeFirestoreData(val);
+      }
+    }
+    return cleaned;
+  }
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // CHAT SESSIONS CRUD
 // ---------------------------------------------------------------------------
@@ -146,13 +180,13 @@ export async function createChatSession(
       : String(title || 'New Conversation').trim();
 
   try {
-    await setDoc(sessionRef, {
+    await setDoc(sessionRef, sanitizeFirestoreData({
       id: conversationId,
       userId,
       title: safeTitle || 'New Conversation',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    });
+    }));
     return conversationId;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -199,13 +233,13 @@ export async function ensureChatSession(
   try {
     const snap = await getDoc(sessionRef);
     if (!snap.exists()) {
-      await setDoc(sessionRef, {
+      await setDoc(sessionRef, sanitizeFirestoreData({
         id: conversationId,
         userId,
         title: defaultTitle,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      }));
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -312,10 +346,10 @@ export async function updateChatSession(
   }
   
   try {
-    await updateDoc(sessionRef, {
+    await updateDoc(sessionRef, sanitizeFirestoreData({
       ...sanitizedUpdates,
       updatedAt: serverTimestamp(),
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -348,21 +382,23 @@ export async function deleteChatSession(
 export async function addChatMessage(
   userId: string,
   conversationId: string,
-  message: Omit<ChatMessage, 'id' | 'timestamp'>
+  message: Omit<ChatMessage, 'id' | 'timestamp'>,
+  customMessageId?: string
 ): Promise<string> {
   const messagesRef = collection(db, 'users', userId, 'conversations', conversationId, 'messages');
   const sessionRef = doc(db, 'users', userId, 'conversations', conversationId);
-  const messageId = uuidv4();
-  const path = `users/${userId}/conversations/${conversationId}/messages`;
+  const messageId = customMessageId || uuidv4();
+  const msgDocRef = doc(messagesRef, messageId);
+  const path = `users/${userId}/conversations/${conversationId}/messages/${messageId}`;
 
   try {
-    await addDoc(messagesRef, {
+    await setDoc(msgDocRef, sanitizeFirestoreData({
       ...message,
       id: messageId,
       userId,
       conversationId,
       timestamp: serverTimestamp(),
-    });
+    }));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -474,7 +510,7 @@ export async function updateChatMessage(
   const path = `users/${userId}/conversations/${conversationId}/messages/${messageId}`;
   
   try {
-    await updateDoc(msgRef, updates);
+    await updateDoc(msgRef, sanitizeFirestoreData(updates));
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
